@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+	<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" basePath="/integracion" doc:name="HTTP Listener Configuration"/>
+	<db:mysql-config name="MySQL_Configuration" host="localhost" port="3306" user="root" password="123456" database="ieduca_test" doc:name="MySQL Configuration">
+		<db:connection-properties>
+			<db:property key="serverTimezone" value="UTC"/>
+		</db:connection-properties>
+	</db:mysql-config>
+	<jms:activemq-connector name="Active_MQ" specification="1.1" username="admin" password="admin" brokerURL="tcp://localhost:61616" validateConnections="true" doc:name="Active MQ"/>
+	<flow name="integracion-encolaDatos">
+		<http:listener config-ref="HTTP_Listener_Configuration" path="/clonar" parseRequest="false" responseStreamingMode="ALWAYS" doc:name="Clonar Datos"/>
+		<db:select config-ref="MySQL_Configuration" transactionalAction="NOT_SUPPORTED" doc:name="Mysql lee datos">
+			<db:parameterized-query><![CDATA[select nombres, apellidos, correo, direccion, telefono from datos_persona]]></db:parameterized-query>
+		</db:select>
+		<foreach doc:name="Itera sobre cada mensaje">
+			<object-to-byte-array-transformer doc:name="Convierte datos"/>
+			<jms:outbound-endpoint queue="q_ieduca" connector-ref="Active_MQ" doc:name="Encola Data"/>
+		</foreach>
+		<set-payload value="Se inicio el proceso de clonacion de datos personales." doc:name="Respuesta"/>
+	</flow>
+	<flow name="integracion-leeDatos">
+		<jms:inbound-endpoint queue="q_ieduca" connector-ref="Active_MQ" doc:name="Lector de Cola"/>
+		<byte-array-to-object-transformer doc:name="Transforma datos"/>
+		<db:insert config-ref="MySQL_Configuration" doc:name="graba datos">
+			<db:parameterized-query><![CDATA[INSERT INTO DATOS_PERSONA_2(nombres, apellidos, telefono, correo, direccion)
+values(#[message.payload.nombres],#[message.payload.apellidos],#[message.payload.telefono],#[message.payload.correo],#[message.payload.direccion])]]></db:parameterized-query>
+		</db:insert>
+	</flow>
+</mule>
